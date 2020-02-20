@@ -1,0 +1,149 @@
+---
+output: html_fragment
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Appearance rates of crop circles around the world
+
+As part of a Coursera course on Bayesian statistics, I learned to use rjags to fit a model to data. This is the report I wrote for the course.
+
+**Executive summary:** I decided to take a look at some data for the number of crop circles appearing in several countries during the years 2004-2010. There were two questions I was interested in answering: (1) do different countries show different rates of crop circle appearances; (2) do those rates change over time? For the nine countries considered, the rates of crop circle appearances were very different. On the other hand, there was little evidence that the rates change over time, except for three countries. Based on the models and data used, I conclude that each country must be assigned it own separate rate, and that rates canot assumed to be constant in time, at least in the period 2004-2010.
+
+**Introduction:** The problem I'd like to determine is whether different countries show different rates of crop circle appearances. I'd further like to know whether those rates change over time.
+
+**Data:** The data I'm analyzing is a set of crop circle appearances in nine countries (Belgium, Canada, the Czech Republic, England, Germany, the Netherlands, Italy, Switzerland, and the USA) between the years 2004 and 2010. The data come from a [repository of data sets](http://users.stat.ufl.edu/~winner/datasets.html) at the University of Florida, which were in turn curated from a [website](http://www.cropcirclesonline.com/archive/crop-circles-summary-table-by-date.htm) devoted to the study of crop circles. As the data set contains information about crop circles spread across North America and Europe, it is well suited to determine whether crop circles appear more frequently in some countries than others. The time period is rather small, but the data set at least allows me to determine whether the rates changed in the years between 2004 and 2010. Fortunately, there were no missing values in the data set--though of course there may have been unreported crop circles. In partciular, the much high number of crop circles in England suggest that crop circles from England could be overrepresented in the data.
+
+To explore the data, we can plot the number of crop circles appearing in each country:
+
+```{r fig1, out.width = "100%", echo=FALSE}
+setwd("D:/Users/phyng/Coursera/Bayesian Statistics")
+df_init = read.csv(file = "crop_circle.csv", header = TRUE)
+df_cropcircles = as.data.frame(table(df_init$Country, df_init$Year))
+colnames(df_cropcircles) <- c("Country","Year","Number")
+boxplot(df_cropcircles$Number ~ df_cropcircles$Country, ylab = "Number of crop circles", xlab = "Country")
+```
+
+We see that there is certainly one country (England) that shows many more crop circles within this data set. It is more difficult to tell whether the other countries must also be described by separate rates. To estimate whether the rates change in time, we can look at the number of crop circles appear in each year:
+
+```{r, out.width = "100%", echo = FALSE}
+boxplot(df_cropcircles$Number ~ df_cropcircles$Year, ylab = "Number of crop circles", xlab = "Year")
+```
+
+Here it is less obvious whether the rates are changing at all in the time period considered.
+
+**Model:** As this is a counting problem (i.e. counting the number of crop circles that appear), a Poissonian model seems apt. We consider three versions of the model: (1) same rate parameter for all countries and years; (2) different rate parameter for each country that is constant in time; (3) different rate parameter for each country that can change in time.
+
+The model with a single rate parameter can be written as follows: 
+$$
+y_i \vert \lambda \sim \mathrm{Pois} (\lambda),
+$$
+$$
+\lambda \vert \alpha, \beta \sim \mathrm{Ga} (\alpha, \beta),
+$$
+$$
+\alpha = \frac{\mu^2}{\sigma^2}, \beta = \frac{\mu}{\sigma^2},
+$$
+$$
+\mu \sim \mathrm{Ga}(20.0, 1.0/1.0\mathrm{e}6), \, \, \sigma \sim \mathrm{Exp}(1.0/10.0),
+$$
+I take the rate parameter $\lambda$ to follow a Gamma distribution, as $\lambda$ must be positive and peaked away from zero. I define the two parameters of the Gamma distribution in terms of $\mu$ and $\sigma$, where $\mu$ must be positive (and peak away from zero), so it is also Gamma distributed and $\sigma$ is exponentially distributed. The values for the distributions for $\mu$ and $\sigma$ are chosen such that the prior distribution for $\lambda$ is centered around $\lambda = 20$ (a typical number of crop circles for most countries) with a variance of approximately $100$ (to allow for much larger values of $\lambda$ if needed).
+
+For the second model, I use a different rate parameter for each location:
+$$ 
+y_i \vert l_i , \lambda_{l_i} \sim \mathrm{Pois} (\lambda_{l_i}),
+$$
+$$
+\lambda_{l} \vert \alpha, \beta \sim \mathrm{Ga} (\alpha, \beta),
+$$
+where $\alpha$ and $\beta$ are the same as in the first model and $l_i$ is a location parameter indicating which country the data comes from. Non-overlapping credible intervals for the different rate parameters would indicate that different countries need different rates.
+Finally, for the third model, I use a linear regression model for the rate parameter (with a log-link):
+$$
+y_i \vert l_i , \tilde{x}_i, \lambda_{l_i} \sim \mathrm{Pois}(\lambda_{l_i}),
+$$
+$$
+\mathrm{log}(\lambda_l) = C_l + \Delta t_l \, \tilde{x},
+$$
+$$
+C_l \sim \mathrm{Norm}(0.0, 1.0/1.0e6), \, \, \Delta t_l \sim \mathrm{Norm}(0.0, 1.0/1.0e6),
+$$
+where $C_l$ is a country-dependent constant, $\Delta t_l$ is a country-dependent parameter that describes how quickly $\lambda$ changes in time, and $\tilde{x}$ ($= 1 ... 7$) indicates which year the data were taken in. The logarithm is used to ensure that $\lambda$ is positive. The values for the priors for $C_l$ and $\Delta t_l$ were chosen to allow a large range of values for both parameters to be explored. If the credible intervals for $\Delta t_l$ do not contain $0$, it is an indication that the $\lambda_l$ change in time.
+
+I checked convergence of each of the models by looking at the time traces of the parameters, as well as by evaluating the Gelman diagnostics, the autocorrelation diagnostics, and the effective sample sizes. All convergence criteria indicated that all models converged.
+
+``` {r, include = FALSE}
+##### Model 3
+setwd("D:/Users/phyng/Coursera/Bayesian Statistics")
+df_init = read.csv(file = "crop_circle.csv", header = TRUE)
+df_cropcircles = as.data.frame(table(df_init$Country, df_init$Year))
+colnames(df_cropcircles) <- c("Country","Year","Number")
+
+library(rjags)
+set.seed(113)
+mod_string3 = " model {
+for (i in 1:length(Number)) {
+  Number[i] ~ dpois(lam[i])
+  log(lam[i]) = const[Country[i]] + dt[Country[i]]*Year[i]
+}
+
+for (j in 1:max(Country)) {
+  const[j] ~ dnorm(0.0, 1.0/1e6)
+  dt[j] ~ dnorm(0.0, 1.0/1e6)
+}
+
+} "
+
+data_jags3 = as.list(df_cropcircles)
+
+params3 = c("const", "dt")
+
+mod3 = jags.model(textConnection(mod_string3), data=data_jags3, n.chains=3)
+update(mod3, 1e3)
+
+mod_sim3 = coda.samples(model=mod3,
+                        variable.names=params3,
+                        n.iter=1e4)
+mod_csim3 = as.mcmc(do.call(rbind, mod_sim3))
+```
+
+The DIC for the three models were as follows: (1) 1443 for using the same constant rate parameter for all countries; (2) 459.5 for using different (but constant) rate parameters for each country; (3) 387.2 for using different, non-constant rate parameters for each country. Thus the model in which each country has its own rate parameter that can vary in time performs significantly better than the other models. As such, we'll focus our inferences on this model.
+
+To test how well the best model performed, I looked at the residuals, shown on the left below. There is no clear structure or pattern in the residuals, indicating decent fit. Plotting the residuals against the predicted values shows that the variance of the residuals increase as the predicated value increase, in line with a Poissonian process. The residuals therefore indicate that the model is performing well.
+
+``` {r, out.width = "100%", echo = FALSE}
+pm_params = colMeans(mod_csim3)
+loglam = rep(pm_params[1:9], each = 7) + rep(pm_params[10:18], each = 7) * as.numeric(df_cropcircles[order(df_cropcircles$Country),]$Year)
+yhat = exp(loglam)
+resid = df_cropcircles[order(df_cropcircles$Country),]$Number - yhat
+
+par(mfrow = c(1,2))
+plot(resid)
+plot(yhat, resid)
+```
+
+**Results:** Here are histograms of the posterior estimates for the $\Delta t_i$ that describe how much the crop circle rates change in time for each country:
+
+``` {r, out.width = "100%", echo = FALSE}
+par(mfrow = c(3,3))
+hist(mod_csim3[,10], xlab = expression(paste(Delta, "t"[1])), prob = TRUE, main = "Belgium")
+hist(mod_csim3[,11], xlab = expression(paste(Delta, "t"[2])), prob = TRUE, main = "Canada")
+hist(mod_csim3[,12], xlab = expression(paste(Delta, "t"[3])), prob = TRUE, main = "Czech")
+hist(mod_csim3[,13], xlab = expression(paste(Delta, "t"[4])), prob = TRUE, main = "England")
+hist(mod_csim3[,14], xlab = expression(paste(Delta, "t"[5])), prob = TRUE, main = "Germany")
+hist(mod_csim3[,15], xlab = expression(paste(Delta, "t"[6])), prob = TRUE, main = "Netherlands")
+hist(mod_csim3[,16], xlab = expression(paste(Delta, "t"[7])), prob = TRUE, main = "Italy")
+hist(mod_csim3[,17], xlab = expression(paste(Delta, "t"[8])), prob = TRUE, main = "Switzerland")
+hist(mod_csim3[,18], xlab = expression(paste(Delta, "t"[9])), prob = TRUE, main = "USA")
+
+```
+
+We see that although the posterior densities for the $\Delta t_i$ overlap with $0$ for most countries (indicating that there's not strong evidence the rate changes in time), three countries do not overlap with $0$ (meaning $0$ is not in the 95% credible interval for the parameter $\Delta t_i$ for these three countries): Canada, the Czech Republic, and the USA. Further more, all three of these parameters are negative, implying that the number of crop circles decreased over time in these countries.
+
+**Conclusions:** We find that each country must be attributed its own rate of crop circle appearances. Furthermore, although the rate of crop circle appearances appears constant for most countries in the period 2004 - 2010, there are three countries that need a changing rate of crop circles to accurately describe the data. The model could be improved with data from other years. Furthermore, it's not clear that total number of crop circles is the best metric to compare between countries. Crop circles per acre of farmland would be a better metric, as some countries might have more crop circles simply because they have more farmland.
